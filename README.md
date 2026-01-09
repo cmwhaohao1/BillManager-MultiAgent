@@ -10,7 +10,10 @@ A demo showcasing multi-agent collaboration where an **assistant agent** communi
    - Handles daily conversation with users
    - Understands user intent for transaction operations
    - Summarizes user requests into clear, concise instructions
-   - Delegates database operations (query/insert) to mysql_expert
+   - Delegates database operations (query/insert) to mysql_
+
+
+expert
    - Coordinates user interaction
 
 2. **MySQL Expert Agent** (`mysql_expert`)
@@ -105,7 +108,13 @@ Update the password as needed for your MySQL installation.
 
 5. Access studio at `http://localhost:8700/studio`
 
+
+## Demo video
+https://github.com/user-attachments/assets/ed25832e-ab46-49b6-a3b7-35d9c8e72e1e
+
+
 ## Tools
+
 
 ### mysql_tools.py
 - `execute_sql_query(sql, params)` - Execute SQL and return results
