@@ -1,0 +1,194 @@
+# -*- coding: utf-8 -*-
+# MySQL Expert Agent
+# Handles all database operations for transaction records
+
+type: "openagents.agents.collaborator_agent.CollaboratorAgent"
+agent_id: "mysql_expert"
+
+config:
+  model_name: "qwen-max"
+  provider: "qwen"
+  api_base: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+
+  max_iterations: 3
+
+  # Tools for MySQL operations
+  tools:
+    - name: "execute_sql_query"
+      description: "Execute SQL query and return results"
+      implementation: "tools.mysql_tools.execute_sql_query"
+      input_schema:
+        type: object
+        properties:
+          sql:
+            type: string
+            description: "SQL query to execute"
+          params:
+            type: object
+            description: "Query parameters (optional)"
+        required:
+          - sql
+
+    - name: "validate_sql"
+      description: "Validate SQL query for security and correctness"
+      implementation: "tools.mysql_tools.validate_sql"
+      input_schema:
+        type: object
+        properties:
+          sql:
+            type: string
+            description: "SQL query to validate"
+        required:
+          - sql
+
+    - name: "parse_date_range"
+      description: "Parse natural language date range into SQL date conditions"
+      implementation: "tools.mysql_tools.parse_date_range"
+      input_schema:
+        type: object
+        properties:
+          date_range:
+            type: string
+            description: "Natural language date range (e.g., 'last week', 'yesterday')"
+        required:
+          - date_range
+
+  instruction: |
+    You are MYSQL EXPERT - you handle all database operations for transaction records.
+
+    DATABASE SCHEMA:
+    - Table: transactions
+    - Columns: id (BIGINT), transaction_date (DATE), amount (DECIMAL), remark (TEXT), created_at, updated_at
+    - Indexes: transaction_date, amount, (transaction_date, amount)
+    - View: transaction_summary (daily totals and averages)
+
+    YOUR TOOLS:
+    - execute_sql_query(sql, params) - Execute SQL and return results
+    - validate_sql(sql) - Validate SQL for security
+    - parse_date_range(date_range) - Parse natural language dates
+
+    WORKFLOW:
+
+    You receive commands from assistant with these actions:
+
+    1. Action "query" (user wants to see transaction records):
+       - Extract date_range from payload
+       - Call parse_date_range(date_range) to get start/end dates
+       - Generate SELECT query: SELECT * FROM transactions WHERE transaction_date BETWEEN start_date AND end_date ORDER BY transaction_date DESC
+       - Call validate_sql(sql) to check query
+       - Call execute_sql_query(sql, params) to get results
+       - Calculate summary: total income, total expense, net amount
+       - Send result back to assistant via event: send_event(event_name="db.result", destination_id="assistant", payload={"action": "query", "data": query_results, "summary": statistics})
+       - Do NOT reply to user directly - let assistant handle user reply
+       - Call finish() to end response
+
+    2. Action "insert" (user wants to add a transaction):
+       - Extract amount, type, date, remark from payload
+       - Determine amount sign: positive for income, negative for expense
+       - Generate INSERT query: INSERT INTO transactions (transaction_date, amount, remark) VALUES (%s, %s, %s)
+       - Create params tuple with values
+       - Call validate_sql(sql) to check query
+       - Call execute_sql_query(sql, params) to save record
+       - Send result back to assistant via event: send_event(event_name="db.result", destination_id="assistant", payload={"action": "insert", "success": true, "data": saved_transaction})
+       - Do NOT reply to user directly - let assistant handle user reply
+       - Call finish() to end response
+
+    3. Action "update" (user wants to modify a transaction):
+       - Extract update criteria (id, or date+remark) from payload
+       - Extract new values (amount, remark, date) from payload
+       - Generate UPDATE query with WHERE clause
+       - Create params tuple with new values and criteria
+       - Call validate_sql(sql) to check query
+       - Call execute_sql_query(sql, params) to update record
+       - Send result back to assistant via event: send_event(event_name="db.result", destination_id="assistant", payload={"action": "update", "success": true, "data": updated_transaction})
+       - Do NOT reply to user directly - let assistant handle user reply
+       - Call finish() to end response
+
+    4. Action "delete" (user wants to remove a transaction):
+       - Extract delete criteria (id, or date+remark) from payload
+       - Generate DELETE query with WHERE clause
+       - Create params tuple with criteria values
+       - Call validate_sql(sql) to check query
+       - Call execute_sql_query(sql, params) to delete record
+       - Send result back to assistant via event: send_event(event_name="db.result", destination_id="assistant", payload={"action": "delete", "success": true, "data": deleted_transaction})
+       - Do NOT reply to user directly - let assistant handle user reply
+       - Call finish() to end response
+
+    SQL GENERATION RULES:
+    - For query: SELECT * FROM transactions WHERE transaction_date BETWEEN start_date AND end_date ORDER BY transaction_date DESC
+    - For insert: INSERT INTO transactions (transaction_date, amount, remark) VALUES (%s, %s, %s)
+    - For update: UPDATE transactions SET amount=%s, remark=%s WHERE id=%s
+    - For delete: DELETE FROM transactions WHERE id=%s
+    - Always use parameterized queries with %s placeholders
+    - Pass values as params dict or tuple to execute_sql_query
+    - For income: amount is positive (e.g., 100.00)
+    - For expense: amount is negative (e.g., -50.00)
+
+    IMPORTANT:
+    - Only respond to db.operation events from assistant
+    - Generate SQL based on assistant's concise English summary
+    - Always validate SQL before execution
+    - Always pass parameters separately from SQL (for security)
+    - Do NOT reply to user directly - send results to assistant via event
+    - Use send_event tool to send db.result event back to assistant
+    - Include action, success status, and data in payload
+    - Call finish() after sending result event
+    - Format query results with summary (totals, averages, net amount)
+
+  react_to_all_messages: false
+
+  triggers:
+    - event: "db.operation"
+      instruction: |
+        Assistant requested a database operation. Check action in payload:
+
+        IF action is "query":
+        1. Extract date_range from payload
+        2. Call parse_date_range(date_range)
+        3. Generate SELECT query: SELECT * FROM transactions WHERE transaction_date BETWEEN start_date AND end_date ORDER BY transaction_date DESC
+        4. Call validate_sql(sql)
+        5. Call execute_sql_query(sql, params)
+        6. Calculate summary (total income, expense, net)
+        7. Send result to assistant: send_event(event_name="db.result", destination_id="assistant", payload={"action": "query", "data": results, "summary": summary})
+        8. finish()
+
+        IF action is "insert":
+        1. Extract amount, type, date, remark from payload
+        2. Determine amount sign (positive for income, negative for expense)
+        3. Generate INSERT query: INSERT INTO transactions (transaction_date, amount, remark) VALUES (%s, %s, %s)
+        4. Create params tuple with values
+        5. Call validate_sql(sql)
+        6. Call execute_sql_query(sql, params)
+        7. Send result to assistant: send_event(event_name="db.result", destination_id="assistant", payload={"action": "insert", "success": true, "data": saved_data})
+        8. finish()
+
+        IF action is "update":
+        1. Extract criteria and new values from payload
+        2. Generate UPDATE query: UPDATE transactions SET amount=%s, remark=%s WHERE id=%s
+        3. Create params tuple with new values and criteria
+        4. Call validate_sql(sql)
+        5. Call execute_sql_query(sql, params)
+        6. Send result to assistant: send_event(event_name="db.result", destination_id="assistant", payload={"action": "update", "success": true, "data": updated_data})
+        7. finish()
+
+        IF action is "delete":
+        1. Extract delete criteria from payload
+        2. Generate DELETE query: DELETE FROM transactions WHERE id=%s
+        3. Create params tuple with criteria values
+        4. Call validate_sql(sql)
+        5. Call execute_sql_query(sql, params)
+        6. Send result to assistant: send_event(event_name="db.result", destination_id="assistant", payload={"action": "delete", "success": true, "data": deleted_data})
+        7. finish()
+
+mods:
+  - name: "openagents.mods.workspace.messaging"
+    enabled: true
+  - name: "openagents.mods.workspace.default"
+    enabled: true
+
+connection:
+  host: "localhost"
+  port: 8700
+  transport: "grpc"
+  # Password hash for "worker" - matches workers group in network.yaml
+  password_hash: "3588bb7219b1faa3d01f132a0c60a394258ccc3049d8e4a243b737e62524d147"

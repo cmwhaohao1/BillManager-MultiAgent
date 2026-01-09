@@ -1,0 +1,117 @@
+# -*- coding: utf-8 -*-
+# OCR Agent
+# Processes uploaded images and extracts financial information
+
+type: "openagents.agents.collaborator_agent.CollaboratorAgent"
+agent_id: "ocr_agent"
+
+config:
+  model_name: "qwen-max"
+  provider: "qwen"
+  api_base: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+
+  max_iterations: 3
+
+  # OCR tools
+  tools:
+    - name: "process_image_with_ocr"
+      description: "Process uploaded image with local OCR service to extract text and financial data"
+      implementation: "tools.ocr_tools.process_image_with_ocr"
+      input_schema:
+        type: object
+        properties:
+          filename:
+            type: string
+            description: "Name of the uploaded file"
+          storage_type:
+            type: string
+            description: "Storage type (e.g., 'cache')"
+        required:
+          - filename
+          - storage_type
+
+
+  instruction: |
+    You are OCR AGENT - you process uploaded images and extract financial information.
+
+    YOUR WORKFLOW:
+
+    1. When user uploads a file (file upload event):
+       - Extract file_content and filename from event payload
+       - Call process_image_with_ocr(file_content, filename) to get OCR results
+       - Parse the OCR results (JSON format) to identify financial information
+       - Extract and summarize key details: document type, amount, parties involved
+       - Send result to assistant via event
+
+    2. Format your summary based on document type:
+      - **Invoice/Receipt (Invoice/Receipt):**
+        `"Buyer: [buyer_name], Seller: [seller_name], Invoice Amount: [total_amount]RMB"`
+        *Include tax-inclusive total if available*
+      - **Clear income/expense (Clear income/expense):**
+        `"[context] expense/income [amount]RMB"`
+        *Example: "Supermarket shopping expense 120RMB" or "Salary income 5000RMB"*
+      - **Unclear type (Unclear type):**
+        `"Unknown [amount]RMB"`
+        *Example: "Unknown 23.12RMB"*
+
+    3. IMPORTANT RULES:
+       - Only extract TOTAL amount (include tax if present)
+       - Do NOT include itemized details
+       - Keep summary short and concise (one line)
+       - Send result to assistant via send_event event
+       - Do NOT reply to user directly
+       - Call finish() after sending result
+
+    4. Send event format:
+       send_event(
+         event_name="ocr.result",
+         destination_id="assistant",
+         payload={
+           "type": "invoice|expense|income|unknown",
+           "summary": "[your one-line summary]",
+           "amount": [numeric amount],
+           "original_ocr": [full OCR results]
+         }
+       )
+
+    EXAMPLES:
+       - Invoice: "Buyer: Company A, Seller: Company B, Invoice Amount: 500.21RMB"
+       - Expense: "Supermarket shopping expense 120RMB"
+       - Income: "Salary income 5000RMB"
+       - Unknown: "Unknown 23.12RMB"
+
+  react_to_all_messages: false
+
+  triggers:
+    - event: "ocr.request"
+      instruction: |
+        Assistant sent an OCR request for a file. Process it:
+
+        1. Extract file info from payload.file: filename, storage_type
+        2. Call process_image_with_ocr(filename, storage_type)
+        3. Parse OCR JSON results
+        4. Determine document type and amount
+        5. Format one-line summary based on type
+        6. Send result to assistant: send_event(event_name="ocr.result", destination_id="assistant", payload={...})
+        7. finish()
+
+        Keep summary SHORT (one line). Only total amount.
+
+    - event: "ocr.service.test"
+      instruction: |
+        Test OCR service:
+        1. Send result to channel
+        2. finish()
+
+mods:
+  - name: "openagents.mods.workspace.messaging"
+    enabled: true
+  - name: "openagents.mods.workspace.default"
+    enabled: true
+
+connection:
+  host: "localhost"
+  port: 8700
+  transport: "grpc"
+  # Password hash for "coordinator" - matches coordinators group in network.yaml
+  password_hash: "bf24385098410391a81d92b2de72d3a2946d24f42ee387e51004a868281a2408"

@@ -1,0 +1,94 @@
+# -*- coding: utf-8 -*-
+# File Upload Test Agent
+# Simply saves uploaded files to test the upload functionality
+
+type: "openagents.agents.collaborator_agent.CollaboratorAgent"
+agent_id: "file_test_agent"
+
+config:
+  model_name: "qwen-max"
+  provider: "qwen"
+  api_base: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+
+  max_iterations: 3
+
+  # File finding tool
+  tools:
+    - name: "find_and_read_file"
+      description: "Find and read uploaded file from messaging mod's temp directory"
+      implementation: "tools.ocr_tools.find_and_read_file"
+      input_schema:
+        type: object
+        properties:
+          filename:
+            type: string
+            description: "Name of the uploaded file"
+        required:
+          - filename
+
+  instruction: |
+    You are FILE TEST AGENT - you test file upload and file location finding functionality.
+
+    YOUR WORKFLOW:
+
+    When receiving any message (especially file uploads):
+    1. Print the FULL payload to debug: print(f"[DEBUG] Full payload: {payload}")
+    2. Check all possible file locations:
+       - payload.files
+       - payload.content.files
+       - payload.attachment_file_id
+       - payload.attachment_filename
+    3. If files array found (note: files array has metadata, content is saved by messaging mod):
+       - Print file info: filename, storage_type
+       - The actual file is saved by messaging mod in temp directory
+       - Call find_and_read_file(filename) to locate and read the file
+       - Print file path and size
+    4. If attachment found (attachment_file_id, attachment_filename):
+       - Print attachment info
+       - Note: File is already saved by messaging mod
+    5. Tell user the file location and size
+
+
+  react_to_all_messages: false
+
+  triggers:
+    - event: "thread.channel_message.notification"
+      instruction: |
+        Received a channel message notification.
+
+        DEBUG - Print EVERYTHING:
+        print(f"[TRIGGER DEBUG] Full payload: {payload}")
+        print(f"[TRIGGER DEBUG] Payload keys: {payload.keys() if payload else 'None'}")
+
+        Check for files in ALL possible locations:
+        1. payload.files
+        2. payload.content.files
+        3. payload.attachment_file_id
+        4. payload.attachment_filename
+
+        For each found location, print the details.
+
+        If you find files array with filename:
+        1. Extract filename
+        2. Print: filename, storage_type
+        3. Call find_and_read_file(filename) to locate the actual file
+        4. Print the result (path, size)
+
+        If you find attachment fields:
+        1. Print: attachment_file_id and attachment_filename
+        2. Call find_and_read_file(attachment_filename) if available
+
+        After processing, reply to user with file location and size.
+
+mods:
+  - name: "openagents.mods.workspace.messaging"
+    enabled: true
+  - name: "openagents.mods.workspace.default"
+    enabled: true
+
+connection:
+  host: "localhost"
+  port: 8700
+  transport: "grpc"
+  # Password hash for "coordinator"
+  password_hash: "bf24385098410391a81d92b2de72d3a2946d24f42ee387e51004a868281a2408"
