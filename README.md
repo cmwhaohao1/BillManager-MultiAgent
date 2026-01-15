@@ -1,4 +1,4 @@
-# 多代理演示
+# 多代理账单助手demo演示
 一个展示多智能体协作的演示，其中助手智能体与用户进行日常对话，并将数据库操作委托给 MySQL 专家智能体，用于交易记录管理。
 
 ## 架构
@@ -122,7 +122,8 @@
 
 ## 功能演示视频
 https://github.com/user-attachments/assets/ed25832e-ab46-49b6-a3b7-35d9c8e72e1e
-
+B站链接：
+https://www.bilibili.com/video/BV1RYrfBFEDP/?spm_id_from=333.1387.list.card_archive.click
 
 
 
